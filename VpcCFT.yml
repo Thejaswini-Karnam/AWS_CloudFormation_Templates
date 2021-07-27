@@ -1,0 +1,199 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Creating VPC with its components and provisioining of an EC2 instance
+
+Metadata:
+  template metadata
+
+Parameters:
+  VPCName:
+    Type: String
+    Default: MyVPC
+    Description: VPC details
+    Region: ap-southeast-1
+
+  VPCCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  PublicsubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the public subnet
+
+  PrivatesubnetCIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for the private subnet
+
+  EC2InstanceAMI:
+    Type: String
+    Default: ami-0528a50f7af604723
+    Description: windows 2019 ami 
+
+  EC2InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: The instance type of the EC2
+    AllowedValues: 
+      - t2.micro
+        t2.small
+        t2.medium
+
+  EC2KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The EC2 keypair to allow the RDP access to the instance
+
+Rules:
+  set of rules
+
+Mappings:
+  set of mappings
+
+Conditions:
+  set of conditions
+
+Transform:
+  set of transforms
+
+Resources:
+  VPC:
+   Type: AWS::EC2::VPC
+   Properties: 
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags: 
+       - Key: Name
+         Value: !Ref VPCName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+     Tags: 
+      - Key: Name
+        Value: MyIGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC 
+
+  NATGatewayEIP:  
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: VPC
+  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+     AllocationId: !GetAtt NATGatewayEIP.AllocationId
+     SubnetId: !Ref Publicsubnet
+     Tags: 
+      - Key: Name
+        Value: NATGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PubicRT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+ Publicsubnet:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AssignIpv6AddressOnCreation: false
+      AvailabilityZone: ap-southeast-1a
+      CidrBlock: !Ref PublicsubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+       - key: Name
+         Value: Publicsubnet
+      VpcId: !Ref VPC
+
+  PublicsubnetRouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref Publicsubnet
+
+   PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRT
+
+   PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  Privatesubnet:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AssignIpv6AddressOnCreation: false
+      AvailabilityZone: ap-southeast-1b
+      CidrBlock: !Ref PrivatesubnetCIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - key: Name
+          Value: Privatesubnet
+      VpcId: !Ref VPC
+  
+  PrivatesubnetRouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref PrivateRouteTable
+        SubnetId: !Ref Privatesubnet
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable RDP access via port 3389
+      GroupName: MyEC2SecurityGroup
+      SecurityGroupIngress: 
+        - IPProtocol: RDP 
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: MyEC2SecurityGroup
+      VpcId: !Ref VPC
+ 
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      VPC: !Ref VPC
+      Subnet: !Ref Privatesubnet
+      InstanceType: !Ref EC2InstanceType
+      ImageId: !Ref EC2InstanceAMI
+      SecurityGroup: !Ref EC2SecurityGroup
+      KeyName: !Ref EC2KeyName
+      AvailabilityZone: ap-southeast-1b
+      BlockDeviceMappings:
+        DeviceName: /dev/sdm
+        Ebs:
+          VolumeType: io1
+          Iops: 200
+          DeleteOnTermination: false
+          VolumeSize: 20
+Outputs:
+  set of outputs

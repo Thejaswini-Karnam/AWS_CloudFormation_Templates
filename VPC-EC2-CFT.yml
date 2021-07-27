@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Creating VPC with its components and provisioining of an EC2 instance
+Parameters:
+    VPCName:
+        Type: String
+        Default: MyVPC
+        Description: VPC details
+
+    VPCCIDR:
+        Type: String
+        Default: 10.0.0.0/16
+        Description: CIDR block for the VPC
+
+    PublicsubnetCIDR:
+        Type: String
+        Default: 10.0.1.0/24
+        Description: CIDR block for the public subnet
+
+    PrivatesubnetCIDR:
+        Type: String
+        Default: 10.0.2.0/24
+        Description: CIDR block for the private subnet
+  
+    EC2InstanceAMI:
+        Type: String
+        Default: ami-0dc2d3e4c0f9ebd18
+        Description: Amazon Linux 2 AMI for N.Virginia region
+    
+    EC2InstanceType:
+        Type: String
+        Default: t2.micro
+        Description: The instance type of the EC2
+        AllowedValues: 
+            - t2.micro
+            - t2.small
+            - t2.medium
+    AvailabilityZone:
+        Type: String
+        Description: Availability Zone into which instance will launch
+        Default: us-east-1b
+        
+    KeyName:
+        Description: SSH Keypair to login to the instance
+        Type: AWS::EC2::KeyPair::KeyName
+        
+
+Resources:
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties: 
+          CidrBlock: !Ref VPCCIDR
+          EnableDnsHostnames: true
+          EnableDnsSupport: true
+          InstanceTenancy: default
+          Tags: 
+              - Key: Name
+                Value: !Ref VPCName
+
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties: 
+          Tags: 
+            - Key: Name
+              Value: MyIGW
+
+    InternetGatewayAttachment:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties: 
+          InternetGatewayId: !Ref InternetGateway
+          VpcId: !Ref VPC 
+
+    Publicsubnet:
+        Type: AWS::EC2::Subnet
+        Properties: 
+          AvailabilityZone: us-east-1a
+          CidrBlock: !Ref PublicsubnetCIDR
+          MapPublicIpOnLaunch: false
+          Tags: 
+            - Key: Name
+              Value: Publicsubnet
+          VpcId: !Ref VPC
+
+    Privatesubnet:
+        Type: AWS::EC2::Subnet
+        Properties: 
+          AvailabilityZone: us-east-1b
+          CidrBlock: !Ref PrivatesubnetCIDR
+          MapPublicIpOnLaunch: false
+          Tags: 
+            - Key: Name
+              Value: Privatesubnet
+          VpcId: !Ref VPC
+
+    NATGatewayEIP: 
+        Type: AWS::EC2::EIP
+        DependsOn: InternetGatewayAttachment
+        Properties: 
+          Domain: VPC
+        
+    NATGateway:
+        Type: AWS::EC2::NatGateway
+        Properties: 
+          AllocationId: !GetAtt 'NATGatewayEIP.AllocationId'
+          SubnetId: !Ref Publicsubnet
+
+    PublicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: PubicRT
+
+    PublicRoute:
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref PublicRouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref InternetGateway
+
+    PublicsubnetRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+          RouteTableId: !Ref PublicRouteTable
+          SubnetId: !Ref Publicsubnet
+
+    PrivateRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+            VpcId: !Ref VPC
+            Tags:
+              - Key: Name
+                Value: PrivateRT
+
+    PrivateRoute:
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref PrivateRouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          NatGatewayId: !Ref NATGateway
+
+    PrivatesubnetRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties: 
+          RouteTableId: !Ref PrivateRouteTable
+          SubnetId: !Ref Privatesubnet
+     
+    EC2Instance:
+        Type: AWS::EC2::Instance
+        Properties: 
+          ImageId: !Ref EC2InstanceAMI
+          InstanceType: !Ref EC2InstanceType
+          AvailabilityZone: !Ref AvailabilityZone
+          KeyName: !Ref KeyName
+          SecurityGroupIds: 
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref Privatesubnet
+    
+    EC2SecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          VpcId: !Ref VPC
+          GroupDescription: SG to allow SSH access via port 22
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: '22'
+              ToPort: '22'
+              CidrIp: '0.0.0.0/0'
+          Tags:
+            - Key: Name
+              Value: SSH-SG
+
+Outputs:
+    VPC: 
+        Value: !Ref VPC
+        Description: The VPC Id
+
+    PublicsubnetID:
+        Value: !Ref Publicsubnet
+        Description: Reference to the public subnet
+
+    PrivatesubnetID:
+        Value: !Ref Privatesubnet
+        Description: Reference to the private subnet
+        
+    InstanceID:
+        Value: !Ref EC2Instance
+        Description: EC2 InstanceID
